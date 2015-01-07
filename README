@@ -1,4 +1,8 @@
+
+
 README Projet Hadoop. 
+Pour voir les formats d'entrés, regarder le dossier testFiles. Première ligne : sommet de départ. Condition : le graphe termine. 
+
 
 //export
 
@@ -9,10 +13,10 @@ export PATH=$HADOOP_HOME/bin:$PATH
 export HADOOP_LOG_DIR=$HADOOP_HOME/logs
 export HADOOP_SLAVES=$HADOOP_HOME/conf/slaves
 
-//compile 
+//compile
 
-javac -classpath ${HADOOP_HOME}/hadoop-core-${HADOOP_VERSION}.jar:$HADOOP_HOME/lib/commons-cli-1.2.jar -d degre_classes Projet.java
+sh compile.sh
 
-jar -cvf degre.jar -C projet_classes/ .
+//Run
 
-${HADOOP_HOME}/bin/hadoop jar projet.jar Projet input output
+sh run.sh

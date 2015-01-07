@@ -18,26 +18,10 @@ public class Projet {
 	static 	HashSet<String> keys;
 
 	static String logs;
-	static String start = "A";
+	static String start = "undefined";
+	static String processedFileName = "";
 
-	public static class Matrice {
-		public static final Map<String, Integer> weights; 
-
-		static {
-			Map<String, Integer> weightMap = new HashMap<String, Integer>();
-				
-			weightMap.put("AB",3);
-			weightMap.put("AC",4);
-			weightMap.put("AD",1);
-			weightMap.put("BE",2);
-			weightMap.put("CG",5);
-			weightMap.put("DF",1);
-			weightMap.put("EG",3);
-			weightMap.put("FC",3);
-			weights = Collections.unmodifiableMap(weightMap);
-		}
-	}	
-				
+	static Map<String,Integer> arcWeights;
 
 	/* PASSE 1 */
 	public static class FirstPassMap extends Mapper<Object, Text, Text, Text> 
@@ -63,7 +47,7 @@ public class Projet {
 				{
 					myKey = sommet;
 					String matriceKey = currentSommet + myKey; 
-					sendVal = Matrice.weights.get(matriceKey) + ",{}" ;
+					sendVal = arcWeights.get(matriceKey) + ",{}" ;
 
 					logs += "	" + myKey + " " + sendVal + "\n"; 
 					context.write(new Text(myKey),new Text(sendVal));
@@ -89,6 +73,8 @@ public class Projet {
 			String voisins = "";
 			boolean keepOld = false;
 			//Pour tout les voisins de l'item 
+
+			logs += "traitement de : " + key + "\n";
 
 			//logs += key + "\n";	
 			for(Text item : values)
@@ -118,6 +104,7 @@ public class Projet {
 			}
 
 
+			boolean hasVoisins = false;
 			// prepare val 
 			String proccessedVoisins = "{";
 			for(String sommet : voisins.split(","))
@@ -126,8 +113,15 @@ public class Projet {
 				{
 					proccessedVoisins += sommet + ",";
 					sommetsAtteignables.add(sommet);
+					hasVoisins = true;
 				}
 			}
+/*
+			if(voisins.contains(","))
+			{
+				context.write(key, new Text("{}"));
+			}*/
+
 
 			if(proccessedVoisins.length() != 1)
 				proccessedVoisins = proccessedVoisins.substring(0, proccessedVoisins.length()-1);
@@ -144,8 +138,9 @@ public class Projet {
 			//keep old 
 			if(keepOld)
 			{
+				oldint = bestVal;
 				String oldVal =  oldint + "," + proccessedVoisins;
-				context.write(key, new Text(oldVal));
+				//context.write(key, new Text(oldVal));
 			}
 		}
 	}
@@ -167,6 +162,8 @@ public class Projet {
 			int weight = getWeight(myValue);
 
 
+			logs += "Mapping : " + myKey + "(" + getVoisins(myValue) + ")" + "\n";
+
 			//logs +=  myKey + "/" + myValue + "/weigth ="+ weight + "\n";
 			//si poid non infini on map les voisins 
 			if(weight != -1)
@@ -180,7 +177,7 @@ public class Projet {
 						if(voisin.length() > 0)
 						{
 							//logs += "	Voisin : " + voisin+"\n";
-							int voisingWeight = Matrice.weights.get(myKey+voisin);
+							int voisingWeight = arcWeights.get(myKey+voisin);
 							String nVal = (voisingWeight + weight) + "," + "{}"; 
 							logs += "	" + voisin + " " + nVal + "\n";
 							context.write(new Text(voisin), new Text(nVal));
@@ -192,12 +189,14 @@ public class Projet {
 						}
 					}
 				}
+				context.write(new Text(myKey), new Text("" + weight));
 			}
 			else
 			{
 				logs += "	" + myKey + ". " + myValue + "\n";
 				context.write(new Text(myKey), new Text(myValue));
 			}
+
 			//logs += "******endmap*******\n";
 		}
 	}
@@ -254,15 +253,16 @@ public class Projet {
 		return res;		
 	}
 
-	public static int isProcessusOver(String outputFile) throws IOException
+	public static boolean isProcessusOver(String outputFile) throws IOException
 	{
 		keys = new HashSet<String>();
 		HashSet<Integer> values = new HashSet<Integer>();
 
-		int res = -1;
+		boolean res = true;
 		BufferedReader br = new BufferedReader(new FileReader(outputFile));
 		String line;
-		//logs += "\n********************** CHECK *********************\n";
+		
+		logs += "\n********************** CHECK *********************\n";
 		while ((line = br.readLine()) != null) {
 		   int val = getWeight(line);
 		   if(val > -1)
@@ -271,28 +271,137 @@ public class Projet {
 		   		//logs += "WEIGHT : " + val + " KEY : " + key + "\n";
 		   		keys.add(key);
 		   		values.add(val);
-
 		   }
+
+		   String xx = line.split(",")[1].trim();
+		   logs += xx + "\n";
+		   if(!xx.equals("{}"))
+		   {
+		   	res = false;
+		   	logs+="VOISINS";
+		   }	
 		}
 		
-		//logs += "KEYS : " + keys.size() + "\n";
-		//logs += "\n********************** CHECK *********************\n";
+		logs += "KEYS : " + keys.size() + "\n";
+		logs += "\n********************** CHECK *********************\n";
 		br.close();
 
 		if(keys.size() == 1)
 		{
 			for(Integer i : values)
 			{
-				if(res == -1 || res > i)
-					res = i;
+				/*if(res == -1 || res > i)
+					res = i;*/
 			}
 		}
 
 		return res;
 	}
 
+	public static void preprocessFile(String p) throws IOException
+	{
+
+		processedFileName = p.split("/")[p.split("/").length - 1];
+
+		arcWeights = new HashMap<String, Integer>();
+		Map<String,String> sommetsVoisins = new HashMap<String,String>();
+		BufferedReader br = new BufferedReader(new FileReader(p));
+		String line;
+
+		int i = 0;
+		while ((line = br.readLine()) != null) {
+
+			String sommetDepart = "";
+			String sommetArrive = "";
+			if(i == 0)
+			{
+				start = line;				
+			}
+			else
+			{
+				String[] splited = line.split(" ");
+
+				int j = 0;
+				for(String s : splited)
+				{
+					switch(j)
+					{
+						case 0 : // sommet
+							sommetDepart = s;
+							String sommet = sommetsVoisins.get(sommetDepart);
+							if(sommet == null)
+							{
+								sommetsVoisins.put(s,"");
+							}
+							break;
+						case 1 : // voisin
+							sommetArrive = s;
+							String res = sommetsVoisins.get(sommetDepart);
+							//String val = sommetsVoisins;
+							//System.out.println("res AV : " + res);
+							sommetsVoisins.put(sommetDepart, res + " " + s);
+							 res = sommetsVoisins.get(sommetDepart);
+
+							//System.out.println("res AP : " + res);
+							break;
+						case 2 : // val
+							arcWeights.put(sommetDepart + sommetArrive, Integer.parseInt(s));
+							break;
+					}
+
+					j++;
+				}
+
+
+			}
+		   	i++;
+
+		}
+		br.close();
+
+		//Cré fichier départ 
+		PrintWriter writer = new PrintWriter(processedFileName, "UTF-8");
+		for(Map.Entry<String, String> entry : sommetsVoisins.entrySet()) {
+				    String key = entry.getKey();
+				    String value = entry.getValue();
+				    String toWrite  = "";
+
+				    for(String sommet : value.split(" "))
+				    {
+				    	if(!sommet.equals(""))
+				    	{
+					    	toWrite += sommet + ",";
+				    	}
+				    }
+
+				    toWrite = key + " {" + toWrite.substring(0,toWrite.length() -1) + "}";
+
+				    //System.out.println(key + " " + value);
+				    // do what you have to do here
+				    // In your case, an other loop.
+				    writer.println(toWrite);
+				}
+
+		writer.close();
+
+		//Check les poids
+		for(Map.Entry<String, Integer> entry : arcWeights.entrySet()) {
+		    String key = entry.getKey();
+		    Integer value = entry.getValue();
+		    // do what you have to do here
+		    // In your case, an other loop.
+		}
+	}
+
 	public static void main(String[] args) throws Exception 
 	{
+		// Preprocessing the file
+
+		preprocessFile(args[0]);
+		System.out.println("Sommet de départ : " + start + "\n");
+
+		// appmlyting the algorith
+		
 		if (args.length < 2) 
 		{
 			System.err.println("Usage : hadoop jar Projet.jar Projet matrices.in res.out"); 
@@ -301,7 +410,7 @@ public class Projet {
 
 		String outputBase = args[1];
 		String outputDir = outputBase;
-		String inputFile = args[0];
+		String inputFile = processedFileName;
 		String outFile = "/part-r-00000";
 
 		logs = "";
@@ -328,9 +437,9 @@ public class Projet {
 	    Job boucle;
 	    String inFile = "output/part-r-00000";
 
-	    int res = -1;
+	    boolean isOver = false;
 	    int i = 2;
-	    while(res == -1)
+	    while(!isOver)
 	    {
 	    	String in = outputDir + outFile;
 		    outputDir = outputBase + i;
@@ -353,17 +462,19 @@ public class Projet {
 		    FileOutputFormat.setOutputPath(boucle, new Path(outputDir));
 	   		 boucle.waitForCompletion(true);
 
-	   		res = isProcessusOver(outputDir + "/part-r-00000");
+	   		isOver = isProcessusOver(outputDir + "/part-r-00000");
 	   		i++;
 	    
 	    }
  
  		Iterator iter = keys.iterator();
-	    logs = "********************** RESULT ************************\n"
-	    + "		Sommet : " + iter.next() + "\n"
-	    + "		Poids : " + res + "\n"
-	    + "		Passes : " + (i - 1) + "\n"  
-	    + "********************** RESULT ************************\n";
+
+ 		logs += "Les résultats ceux trouvent dans le fichier : " + outputDir + "/part-r-00000" + "\n";
+	    /*logs = "********************** RESULT ************************\n"
+	    + "			Sommet : " + iter.next() + "\n"
+	    //+ "			Poids : " + res + "\n"
+	    + "			Passes : " + (i - 1) + "\n"  
+	    + "********************** RESULT ************************\n";*/
 	    System.out.println(logs);
 
 	}
